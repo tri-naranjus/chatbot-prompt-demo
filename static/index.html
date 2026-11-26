@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f7f4">
+  <title>Prueba tu chatbot</title>
+  <style>
+    :root{color-scheme:light;--ink:#17231f;--muted:#62716b;--line:#dfe6e0;--green:#17765a;--wash:#f6f7f4;--white:#fff}
+    *{box-sizing:border-box}body{margin:0;background:var(--wash);color:var(--ink);font:16px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+    .shell{max-width:850px;margin:0 auto;min-height:100vh;padding:30px 18px;display:flex;flex-direction:column}
+    header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:26px}
+    .brand{display:flex;align-items:center;gap:12px}.mark{width:40px;height:40px;border-radius:13px;background:var(--green);color:white;display:grid;place-items:center;font-weight:800}
+    h1{font-size:20px;margin:0;letter-spacing:-.02em}.sub{font-size:13px;color:var(--muted);margin:2px 0 0}
+    button{font:inherit;cursor:pointer}.reset{border:1px solid var(--line);background:white;color:var(--ink);padding:9px 13px;border-radius:10px}
+    main{background:var(--white);border:1px solid var(--line);border-radius:18px;box-shadow:0 14px 40px #18372c0b;display:flex;flex-direction:column;min-height:68vh;overflow:hidden}
+    .notice{padding:13px 20px;background:#f0f6f1;border-bottom:1px solid var(--line);font-size:13px;color:#43554d}
+    #messages{padding:25px 22px;display:flex;flex:1;flex-direction:column;gap:17px;overflow:auto}
+    .message{max-width:min(82%,650px);padding:12px 15px;border-radius:15px;white-space:pre-wrap;overflow-wrap:anywhere}
+    .assistant{align-self:flex-start;background:#f0f3f0;border-bottom-left-radius:4px}.user{align-self:flex-end;background:#e2f2e9;border-bottom-right-radius:4px}
+    .welcome{color:var(--muted);text-align:center;margin:auto;max-width:430px}.welcome strong{display:block;color:var(--ink);font-size:18px;margin-bottom:6px}
+    form{padding:16px 18px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:flex-end}
+    textarea{resize:vertical;min-height:52px;max-height:170px;flex:1;border:1px solid var(--line);border-radius:13px;padding:13px 14px;font:inherit;outline:none}
+    textarea:focus{border-color:#76a991;box-shadow:0 0 0 3px #17765a15}
+    .send{border:0;border-radius:12px;background:var(--green);color:white;font-weight:650;padding:13px 19px;min-height:50px}.send:disabled{opacity:.55;cursor:wait}
+    .foot{font-size:12px;color:var(--muted);text-align:center;padding-top:12px}
+    @media(max-width:560px){.shell{padding:16px 10px}header{margin-bottom:15px}.sub{max-width:245px}.reset{padding:8px 10px;font-size:13px}main{min-height:76vh}#messages{padding:18px 13px}.message{max-width:92%}form{padding:12px 10px;gap:7px}.send{padding:12px}}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="brand"><div class="mark">AI</div><div><h1>Prueba tu chatbot</h1><p class="sub">Una conversación de prueba con tu prompt guardado</p></div></div>
+      <button class="reset" id="reset" type="button">Nueva conversación</button>
+    </header>
+    <main>
+      <div class="notice">El servidor usa el prompt configurado. Los mensajes se envían a la API de OpenAI.</div>
+      <section id="messages" aria-live="polite" aria-label="Conversación">
+        <div class="welcome" id="welcome"><strong>¿Qué quieres probar?</strong>Escribe una pregunta y verás la respuesta de tu chatbot.</div>
+      </section>
+      <form id="form">
+        <textarea id="input" placeholder="Escribe tu mensaje…" aria-label="Tu mensaje" maxlength="6000" required></textarea>
+        <button class="send" id="send" type="submit">Enviar</button>
+      </form>
+    </main>
+    <div class="foot" id="status">La clave de API permanece en el servidor; no se incluye en esta página.</div>
+  </div>
+  <script>
+    const messages = document.querySelector("#messages");
+    const form = document.querySelector("#form");
+    const input = document.querySelector("#input");
+    const send = document.querySelector("#send");
+    const status = document.querySelector("#status");
+    const sessionKey = "prompt-demo-session";
+    let sessionId = sessionStorage.getItem(sessionKey) || crypto.randomUUID();
+    sessionStorage.setItem(sessionKey, sessionId);
+
+    function addMessage(text, role) {
+      document.querySelector("#welcome")?.remove();
+      const node = document.createElement("div");
+      node.className = "message " + role;
+      node.textContent = text;
+      messages.appendChild(node);
+      messages.scrollTop = messages.scrollHeight;
+      return node;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const message = input.value.trim();
+      if (!message || send.disabled) return;
+      addMessage(message, "user");
+      input.value = "";
+      send.disabled = true;
+      send.textContent = "…";
+      status.textContent = "El chatbot está respondiendo…";
+      const pending = addMessage("Pensando…", "assistant");
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({session_id: sessionId, message})
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Error al consultar el chatbot.");
+        pending.textContent = data.reply || "(El chatbot no devolvió texto.)";
+        status.textContent = "Respuesta recibida.";
+      } catch (error) {
+        pending.textContent = "No se pudo obtener respuesta: " + error.message;
+        status.textContent = "Comprueba que el servidor está activo y tiene OPENAI_API_KEY configurada.";
+      } finally {
+        send.disabled = false;
+        send.textContent = "Enviar";
+        input.focus();
+        messages.scrollTop = messages.scrollHeight;
+      }
+    });
+
+    document.querySelector("#reset").addEventListener("click", () => {
+      sessionId = crypto.randomUUID();
+      sessionStorage.setItem(sessionKey, sessionId);
+      messages.replaceChildren();
+      const welcome = document.createElement("div");
+      welcome.className = "welcome";
+      welcome.id = "welcome";
+      welcome.innerHTML = "<strong>Nueva conversación</strong>Escribe una pregunta y verás la respuesta de tu chatbot.";
+      messages.appendChild(welcome);
+      status.textContent = "Conversación reiniciada.";
+      input.focus();
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+  </script>
+</body>
+</html>
