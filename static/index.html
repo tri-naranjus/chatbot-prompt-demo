@@ -15,6 +15,9 @@
     button{font:inherit;cursor:pointer}.reset{border:1px solid var(--line);background:white;color:var(--ink);padding:9px 13px;border-radius:10px}
     main{background:var(--white);border:1px solid var(--line);border-radius:18px;box-shadow:0 14px 40px #18372c0b;display:flex;flex-direction:column;min-height:68vh;overflow:hidden}
     .notice{padding:13px 20px;background:#f0f6f1;border-bottom:1px solid var(--line);font-size:13px;color:#43554d}
+    .access{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}.access label{font-size:13px;color:var(--muted)}
+    .access input{border:1px solid var(--line);border-radius:9px;padding:9px 11px;font:inherit;max-width:260px}.access input:focus{outline:2px solid #17765a44}
+    .access-note{font-size:12px;color:var(--muted)}
     #messages{padding:25px 22px;display:flex;flex:1;flex-direction:column;gap:17px;overflow:auto}
     .message{max-width:min(82%,650px);padding:12px 15px;border-radius:15px;white-space:pre-wrap;overflow-wrap:anywhere}
     .assistant{align-self:flex-start;background:#f0f3f0;border-bottom-left-radius:4px}.user{align-self:flex-end;background:#e2f2e9;border-bottom-right-radius:4px}
@@ -34,7 +37,8 @@
       <button class="reset" id="reset" type="button">Nueva conversación</button>
     </header>
     <main>
-      <div class="notice">El servidor usa el prompt configurado. Los mensajes se envían a la API de OpenAI.</div>
+      <div class="notice">Demo protegida. Los mensajes se envían a la API de OpenAI.</div>
+      <div class="access"><label for="demo-password">Contraseña de acceso</label><input id="demo-password" type="password" autocomplete="current-password" placeholder="Contraseña de la demo"><span class="access-note">Te la facilitará quien organice la demo.</span></div>
       <section id="messages" aria-live="polite" aria-label="Conversación">
         <div class="welcome" id="welcome"><strong>¿Qué quieres probar?</strong>Escribe una pregunta y verás la respuesta de tu chatbot.</div>
       </section>
@@ -43,7 +47,7 @@
         <button class="send" id="send" type="submit">Enviar</button>
       </form>
     </main>
-    <div class="foot" id="status">La clave de API permanece en el servidor; no se incluye en esta página.</div>
+    <div class="foot" id="status">La clave de API solo se guarda en las variables privadas de Vercel.</div>
   </div>
   <script>
     const messages = document.querySelector("#messages");
@@ -51,9 +55,15 @@
     const input = document.querySelector("#input");
     const send = document.querySelector("#send");
     const status = document.querySelector("#status");
-    const sessionKey = "prompt-demo-session";
-    let sessionId = sessionStorage.getItem(sessionKey) || crypto.randomUUID();
-    sessionStorage.setItem(sessionKey, sessionId);
+    const passwordField = document.querySelector("#demo-password");
+    let demoPassword = sessionStorage.getItem("demo-password") || "";
+    let previousResponseId = null;
+    passwordField.value = demoPassword;
+    passwordField.addEventListener("input", () => {
+      demoPassword = passwordField.value;
+      sessionStorage.setItem("demo-password", demoPassword);
+      previousResponseId = null;
+    });
 
     function addMessage(text, role) {
       document.querySelector("#welcome")?.remove();
@@ -76,13 +86,15 @@
       status.textContent = "El chatbot está respondiendo…";
       const pending = addMessage("Pensando…", "assistant");
       try {
+        if (!demoPassword) throw new Error("Introduce la contraseña de demo.");
         const response = await fetch("/api/chat", {
           method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({session_id: sessionId, message})
+          headers: {"Content-Type": "application/json", "X-Demo-Password": demoPassword},
+          body: JSON.stringify({message, previous_response_id: previousResponseId})
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || "Error al consultar el chatbot.");
+        previousResponseId = data.response_id;
         pending.textContent = data.reply || "(El chatbot no devolvió texto.)";
         status.textContent = "Respuesta recibida.";
       } catch (error) {
@@ -97,8 +109,7 @@
     });
 
     document.querySelector("#reset").addEventListener("click", () => {
-      sessionId = crypto.randomUUID();
-      sessionStorage.setItem(sessionKey, sessionId);
+      previousResponseId = null;
       messages.replaceChildren();
       const welcome = document.createElement("div");
       welcome.className = "welcome";
